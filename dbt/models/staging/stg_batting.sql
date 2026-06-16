@@ -1,0 +1,30 @@
+{{ config(materialized = 'view', tags = ['staging', 'batting']) }}
+
+SELECT
+    player_id,
+    year_id,
+    stint,
+    team_id,
+    lg_id,
+    g                                   AS games,
+    ab                                  AS at_bats,
+    r                                   AS runs,
+    h                                   AS hits,
+    "2b"                                AS doubles,
+    "3b"                                AS triples,
+    hr                                  AS home_runs,
+    rbi                                 AS rbi,
+    sb                                  AS stolen_bases,
+    cs                                  AS caught_stealing,
+    bb                                  AS walks,
+    so                                  AS strikeouts,
+    ibb                                 AS intentional_walks,
+    hbp                                 AS hit_by_pitch,
+    sh                                  AS sac_hits,
+    sf                                  AS sac_flies,
+    gidp                                AS gidp,
+    pa,
+    obp,
+    slg,
+    ops
+FROM {{ source('raw', 'batting') }}

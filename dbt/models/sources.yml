@@ -1,0 +1,78 @@
+version: 2
+
+sources:
+  - name: raw
+    description: "Untouched Lahman tables loaded via \\copy from `scripts/load_csvs.sql`."
+    schema: raw
+    tables:
+      - name: people
+        description: "Player biographical data."
+        columns:
+          - name: player_id
+            tests:
+              - not_null
+              - unique
+          - name: name_first
+          - name: name_last
+          - name: weight
+          - name: height
+
+      - name: teams
+        description: "One row per team-season."
+        columns:
+          - name: team_id
+            tests:
+              - not_null
+          - name: year_id
+            tests:
+              - not_null
+          - name: w
+            tests:
+              - not_null
+              - dbt_utils.accepted_range:
+                  min_value: 0
+                  max_value: 162
+
+      - name: batting
+        description: "Player-season batting line, one row per stint."
+        columns:
+          - name: player_id
+            tests:
+              - not_null
+              - relationships:
+                  to: source('raw', 'people')
+                  field: player_id
+          - name: year_id
+            tests: [not_null]
+          - name: team_id
+            tests: [not_null]
+
+      - name: pitching
+        description: "Player-season pitching line, one row per stint."
+        columns:
+          - name: player_id
+            tests:
+              - not_null
+              - relationships:
+                  to: source('raw', 'people')
+                  field: player_id
+          - name: ipouts
+          - name: era
+          - name: gs
+
+      - name: salaries
+        description: "Player-team-season salaries, 1985 onward."
+        columns:
+          - name: salary
+            tests:
+              - not_null
+              - dbt_utils.expression_is_true:
+                  expression: "> 0"
+
+  - name: analytics
+    description: "Internally-managed materialized views (V004 migration)."
+    schema: analytics
+    tables:
+      - name: mv_team_payroll
+      - name: mv_team_physiques
+      - name: mv_league_pitching_baseline

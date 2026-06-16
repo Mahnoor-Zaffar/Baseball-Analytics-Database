@@ -1,0 +1,33 @@
+name: 'baseball'
+version: '1.0.0'
+config-version: 2
+
+profile: 'baseball'
+
+model-paths:   ["models"]
+analysis-paths: ["analyses"]
+test-paths:    ["tests"]
+seed-paths:    ["seeds"]
+macro-paths:   ["macros"]
+snapshot-paths:["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  baseball:
+    +materialized: view
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table
+      +tags: ["marts"]
+
+vars:
+  qualifying_ipouts: 162   # 54 IP, used by FIP / ERA+ models
+  qualifying_pa: 502       # MLB official qualifying threshold
+  cost_per_win_target_year: 2010

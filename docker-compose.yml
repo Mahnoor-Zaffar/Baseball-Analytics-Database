@@ -1,0 +1,80 @@
+services:
+  postgres:
+    build:
+      context: ./docker/postgres
+    container_name: baseball-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-baseball}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-baseball}
+      POSTGRES_DB: ${POSTGRES_DB:-baseball}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - .:/workspace:ro
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    shm_size: 256mb
+    restart: unless-stopped
+
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres:1.8.latest
+    container_name: baseball-dbt
+    working_dir: /usr/app/dbt
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-baseball}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-baseball}
+      POSTGRES_DB: ${POSTGRES_DB:-baseball}
+      DBT_PROFILES_DIR: /usr/app/dbt
+    volumes:
+      - ./dbt:/usr/app/dbt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["dbt"]
+
+  api:
+    build:
+      context: ./api
+    container_name: baseball-api
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-baseball}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-baseball}
+      POSTGRES_DB: ${POSTGRES_DB:-baseball}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["api"]
+
+  notebook:
+    image: jupyter/scipy-notebook:python-3.11
+    container_name: baseball-notebook
+    environment:
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-baseball}
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-baseball}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-baseball}
+      POSTGRES_DB: ${POSTGRES_DB:-baseball}
+    ports:
+      - "${JUPYTER_PORT:-8888}:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./sql:/home/jovyan/sql:ro
+    command: >
+      bash -c "pip install --quiet psycopg2-binary sqlalchemy pandas matplotlib seaborn &&
+               start-notebook.sh --NotebookApp.token=$${JUPYTER_TOKEN}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["notebook"]
+
+volumes:
+  pgdata:

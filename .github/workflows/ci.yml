@@ -1,0 +1,183 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs on the same ref — saves CI minutes during force-pushes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ───────────────────────── Lint + static checks ─────────────────────────
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sqlfluff
+        run: pipx install sqlfluff==3.2.4
+
+      - name: Lint SQL
+        run: sqlfluff lint --dialect postgres sql/ migrations/ tests/ || true
+        # `|| true` — sqlfluff is advisory, not gating. Flip to blocking once
+        # the style profile in .sqlfluff is dialed in.
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+
+      - name: Lint Python (ruff)
+        run: |
+          pip install ruff==0.6.9
+          ruff check api/
+
+  # ───────────────────────── End-to-end DB pipeline ───────────────────────
+  e2e:
+    name: e2e (load → migrate → test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: baseball
+          POSTGRES_PASSWORD: baseball
+          POSTGRES_DB: baseball
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U baseball -d baseball"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: baseball
+      PGUSER: baseball
+      PGHOST: 127.0.0.1
+      PGDATABASE: baseball
+      LAHMAN_VERSION: "2023.1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql + curl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client curl
+
+      - name: Enable extensions + bootstrap schemas
+        run: |
+          # pg_stat_statements requires shared_preload_libraries at server start;
+          # we install it for completeness but tracking won't activate in CI.
+          psql -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          psql -c "CREATE EXTENSION IF NOT EXISTS btree_gin;"
+          psql -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+          psql -c "CREATE SCHEMA IF NOT EXISTS raw;"
+          psql -c "CREATE SCHEMA IF NOT EXISTS analytics;"
+          psql -c "CREATE SCHEMA IF NOT EXISTS marts;"
+
+      - name: Download Lahman dataset
+        run: ./scripts/download_lahman.sh
+
+      - name: Load CSVs (data/raw/ is locally accessible to psql)
+        run: |
+          # Substitute the docker container path with the local checkout path.
+          sed -i 's|/workspace/data/raw|'"$(pwd)"'/data/raw|g' scripts/load_csvs.sql
+          psql -v ON_ERROR_STOP=1 -v DBNAME=baseball -f scripts/load_csvs.sql
+
+      - name: Apply migrations
+        run: |
+          for f in migrations/V*.sql; do
+              echo "▶ $f"
+              psql -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Run data-quality tests
+        run: psql -v ON_ERROR_STOP=1 -f tests/test_data_quality.sql
+
+      - name: Build sabermetrics views
+        run: |
+          psql -v ON_ERROR_STOP=1 -f sql/sabermetrics/fip.sql
+          psql -v ON_ERROR_STOP=1 -f sql/sabermetrics/woba.sql
+          psql -v ON_ERROR_STOP=1 -f sql/sabermetrics/era_adjusted.sql
+          psql -v ON_ERROR_STOP=1 -f sql/sabermetrics/war_proxy.sql
+
+      - name: Run award assertions
+        run: psql -v ON_ERROR_STOP=1 -f tests/test_awards.sql
+
+      - name: Capture EXPLAIN plans (archived as artifact)
+        run: |
+          mkdir -p plans
+          psql -v ON_ERROR_STOP=1 -f sql/baseball_awards.sql > plans/awards.log 2>&1 || true
+
+      - name: Upload plans artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: explain-plans
+          path: plans/
+
+      - name: Job summary — top awards
+        if: always()
+        run: |
+          {
+            echo "## Award results"
+            echo ""
+            echo '```'
+            psql -v ON_ERROR_STOP=1 -A -F$'\t' -t \
+                -c "SELECT 'Biggest Spenders', team_id, year_id, total_payroll_usd FROM analytics.mv_team_payroll ORDER BY total_payroll_usd DESC LIMIT 1;"
+            psql -v ON_ERROR_STOP=1 -A -F$'\t' -t \
+                -c "SELECT 'Heaviest Hitters', team_id, year_id, avg_weight_lbs FROM analytics.mv_team_physiques ORDER BY avg_weight_lbs DESC NULLS LAST LIMIT 1;"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────── dbt build + tests ────────────────────────────
+  dbt:
+    name: dbt
+    runs-on: ubuntu-latest
+    needs: e2e
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: baseball
+          POSTGRES_PASSWORD: baseball
+          POSTGRES_DB: baseball
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U baseball -d baseball"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_USER: baseball
+      POSTGRES_PASSWORD: baseball
+      POSTGRES_DB: baseball
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+
+      - name: Install dbt-postgres
+        run: pip install dbt-postgres==1.8.2
+
+      - name: Copy profile template
+        run: cp dbt/profiles.yml.example dbt/profiles.yml
+
+      - name: Seed minimal schema (so dbt can compile without full load)
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          PGPASSWORD=baseball psql -h 127.0.0.1 -U baseball -d baseball \
+              -c "CREATE SCHEMA IF NOT EXISTS raw; CREATE SCHEMA IF NOT EXISTS analytics; CREATE SCHEMA IF NOT EXISTS marts;"
+
+      - name: dbt deps
+        working-directory: ./dbt
+        run: dbt deps
+
+      - name: dbt parse (syntax-level validation)
+        working-directory: ./dbt
+        run: dbt parse --target ci

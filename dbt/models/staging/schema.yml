@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: stg_people
+    columns:
+      - name: player_id
+        tests: [not_null, unique]
+      - name: full_name
+        tests: [not_null]
+
+  - name: stg_teams
+    columns:
+      - name: team_id
+        tests: [not_null]
+      - name: year_id
+        tests: [not_null]
+      - name: win_pct
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 1}
+
+  - name: stg_batting
+    columns:
+      - name: player_id
+        tests:
+          - not_null
+          - relationships: {to: ref('stg_people'), field: player_id}
+
+  - name: stg_pitching
+    columns:
+      - name: player_id
+        tests:
+          - not_null
+          - relationships: {to: ref('stg_people'), field: player_id}
+      - name: era
+        # ERA is NULL for pitchers who faced 0 batters; otherwise must be >= 0
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+              config: {where: "era IS NOT NULL"}
+
+  - name: stg_salaries
+    columns:
+      - name: salary_usd
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true: {expression: "> 0"}

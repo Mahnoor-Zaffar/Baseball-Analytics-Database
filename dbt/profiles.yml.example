@@ -1,0 +1,26 @@
+# Copy to profiles.yml (or set DBT_PROFILES_DIR to this directory in docker).
+# Credentials are pulled from env vars so the file is safe to commit a template.
+
+baseball:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'postgres') }}"
+      user: "{{ env_var('POSTGRES_USER', 'baseball') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'baseball') }}"
+      port: "{{ env_var('POSTGRES_PORT', 5432) | int }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'baseball') }}"
+      schema: marts
+      threads: 4
+      keepalives_idle: 0
+      sslmode: prefer
+    ci:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      user: "{{ env_var('POSTGRES_USER', 'baseball') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'baseball') }}"
+      port: "{{ env_var('POSTGRES_PORT', 5432) | int }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'baseball') }}"
+      schema: marts_ci
+      threads: 2

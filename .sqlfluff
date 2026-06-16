@@ -1,0 +1,26 @@
+[sqlfluff]
+dialect = postgres
+templater = jinja
+max_line_length = 110
+sql_file_exts = .sql
+
+[sqlfluff:indentation]
+tab_space_size = 4
+indent_unit = space
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower
+
+[sqlfluff:rules:layout.long_lines]
+ignore_comment_lines = True
+ignore_comment_clauses = True
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = True
+
+[sqlfluff:exclude_rules]
+# Long inline comments are intentional; readability > strict 110-col rule.
+exclude_rules = LT05, LT09, ST06

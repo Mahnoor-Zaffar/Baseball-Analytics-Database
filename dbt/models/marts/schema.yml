@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: mart_team_payroll
+    description: "Per-(year, team) payroll + record + efficiency metrics."
+    columns:
+      - name: year_id
+        tests: [not_null]
+      - name: team_id
+        tests: [not_null]
+      - name: total_payroll_usd
+        tests:
+          - not_null
+          - dbt_utils.expression_is_true: {expression: "> 0"}
+      - name: cost_per_win_usd
+        tests:
+          - dbt_utils.expression_is_true:
+              expression: ">= 0"
+              config: {where: "cost_per_win_usd IS NOT NULL"}
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [year_id, team_id]
+
+  - name: mart_pitcher_advanced
+    description: "Qualified pitchers with FIP, ERA+, z-score, K/9, BB/9."
+    columns:
+      - name: player_id
+        tests: [not_null]
+      - name: era
+        tests: [not_null]
+      - name: fip
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 15}
+      - name: era_plus
+        tests:
+          - dbt_utils.accepted_range: {min_value: 0, max_value: 500}
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [player_id, year_id, team_id]
+
+  - name: mart_team_physiques
+    description: "Per-(team, year) roster physique aggregates."
+    columns:
+      - name: avg_weight_lbs
+        tests:
+          - dbt_utils.accepted_range: {min_value: 150, max_value: 280}
+      - name: avg_height_in
+        tests:
+          - dbt_utils.accepted_range: {min_value: 60, max_value: 80}
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [team_id, year_id]
