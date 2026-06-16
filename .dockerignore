@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+venv
+__pycache__
+*.pyc
+.ipynb_checkpoints
+dbt/target
+dbt/dbt_packages
+dbt/logs
+plans
+benchmarks/results
+data/raw
+*.md
+!README.md

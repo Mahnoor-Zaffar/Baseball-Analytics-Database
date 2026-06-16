@@ -1,0 +1,50 @@
+# Environment
+.env
+.env.local
+*.env.bak
+
+# Data — never commit the Lahman dump (it's large and externally hosted)
+data/raw/
+data/processed/
+data/*.csv
+data/*.sql
+data/*.zip
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/profiles.yml
+
+# Postgres dumps & plans
+plans/*.json
+plans/*.txt
+!plans/.gitkeep
+benchmarks/results/
+!benchmarks/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker
+.docker/
